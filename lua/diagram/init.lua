@@ -5,7 +5,7 @@ local integrations = require("diagram/integrations")
 local state = {
 	events = {
 		render_buffer = { "InsertLeave", "BufWinEnter", "TextChanged" },
-		clear_buffer = { "BufLeave" },
+		clear_buffer = { "BufLeave", "InsertEnter" },
 	},
 	renderer_options = {
 		mermaid = {
