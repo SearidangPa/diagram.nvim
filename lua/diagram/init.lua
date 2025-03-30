@@ -4,8 +4,7 @@ local integrations = require("diagram/integrations")
 ---@class State
 local state = {
 	events = {
-		render_buffer = { "InsertLeave", "BufWinEnter", "TextChanged" },
-		clear_buffer = { "BufLeave", "InsertEnter" },
+		clear_buffer = { "InsertEnter" },
 	},
 	renderer_options = {
 		mermaid = {
@@ -23,6 +22,7 @@ local state = {
 }
 
 local clear_buffer = function(bufnr)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	for _, diagram in ipairs(state.diagrams) do
 		if diagram.bufnr == bufnr and diagram.image ~= nil then
 			diagram.image:clear()
@@ -34,6 +34,9 @@ end
 ---@param winnr number
 ---@param integration Integration
 local render_buffer = function(bufnr, winnr, integration)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	winnr = winnr or vim.api.nvim_get_current_win()
+
 	local diagrams = integration.query_buffer_diagrams(bufnr)
 	clear_buffer(bufnr)
 	for _, diagram in ipairs(diagrams) do
@@ -103,6 +106,23 @@ local render_buffer = function(bufnr, winnr, integration)
 	end
 end
 
+-- Function to render diagrams in the current buffer
+local render_diagrams = function()
+	local bufnr = vim.api.nvim_get_current_buf()
+	local winnr = vim.api.nvim_get_current_win()
+	local ft = vim.bo[bufnr].filetype
+
+	-- Find the right integration for the current filetype
+	for _, integration in ipairs(state.integrations) do
+		if vim.tbl_contains(integration.filetypes, ft) then
+			render_buffer(bufnr, winnr, integration)
+			return
+		end
+	end
+
+	vim.notify("No integration found for filetype: " .. ft, vim.log.levels.WARN)
+end
+
 ---@param opts PluginOptions
 local setup = function(opts)
 	local ok = pcall(require, "image")
@@ -113,21 +133,22 @@ local setup = function(opts)
 	state.integrations = opts.integrations or state.integrations
 	state.renderer_options = vim.tbl_deep_extend("force", state.renderer_options, opts.renderer_options or {})
 
-	local current_bufnr = vim.api.nvim_get_current_buf()
-	local current_winnr = vim.api.nvim_get_current_win()
-	local current_ft = vim.bo[current_bufnr].filetype
+	-- Create user commands
+	vim.api.nvim_create_user_command("DiagramRender", function()
+		render_diagrams()
+	end, {
+		desc = "Render diagrams in the current buffer",
+	})
 
-	local setup_buffer = function(bufnr, integration)
-		-- render
-		vim.api.nvim_create_autocmd(state.events.render_buffer, {
-			buffer = bufnr,
-			callback = function(buf_ev)
-				local winnr = buf_ev.event == "BufWinEnter" and buf_ev.winnr or vim.api.nvim_get_current_win()
-				render_buffer(bufnr, winnr, integration)
-			end,
-		})
+	vim.api.nvim_create_user_command("DiagramClear", function()
+		clear_buffer()
+	end, {
+		desc = "Clear diagrams in the current buffer",
+	})
 
-		-- clear
+	-- Setup autocommand for clearing on insert mode
+	local setup_buffer_autocmds = function(bufnr)
+		-- Only set up the clear autocmd
 		if state.events.clear_buffer then
 			vim.api.nvim_create_autocmd(state.events.clear_buffer, {
 				buffer = bufnr,
@@ -138,19 +159,20 @@ local setup = function(opts)
 		end
 	end
 
-	-- setup integrations
+	-- Create autocommands for buffer events
 	for _, integration in ipairs(state.integrations) do
 		vim.api.nvim_create_autocmd("FileType", {
 			pattern = integration.filetypes,
 			callback = function(ft_event)
-				setup_buffer(ft_event.buf, integration)
+				setup_buffer_autocmds(ft_event.buf)
 			end,
 		})
 
-		-- first render
+		-- Set up autocommands for the current buffer if it matches
+		local current_bufnr = vim.api.nvim_get_current_buf()
+		local current_ft = vim.bo[current_bufnr].filetype
 		if vim.tbl_contains(integration.filetypes, current_ft) then
-			setup_buffer(current_bufnr, integration)
-			render_buffer(current_bufnr, current_winnr, integration)
+			setup_buffer_autocmds(current_bufnr)
 		end
 	end
 end
@@ -162,4 +184,6 @@ end
 return {
 	setup = setup,
 	get_cache_dir = get_cache_dir,
+	render_diagrams = render_diagrams,
+	clear_buffer = clear_buffer,
 }
