@@ -4,7 +4,7 @@ local integrations = require("diagram/integrations")
 ---@class State
 local state = {
 	events = {
-		clear_buffer = { "InsertEnter" },
+		clear_buffer = { "InsertEnter", "CursorMoved" },
 	},
 	renderer_options = {
 		mermaid = {
